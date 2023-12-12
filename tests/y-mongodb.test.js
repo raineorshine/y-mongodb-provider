@@ -269,3 +269,78 @@ describe('store multiple documents in single collection', () => {
 		expect(count).toEqual(0);
 	});
 });
+
+describe('store multiple documents in multiple collections', () => {
+	let mongoServer;
+	let mongodbPersistence;
+	let mongoConnection;
+	const docNameOne = 'testDocOne';
+	const docNameTwo = 'testDocTwo';
+	const contentOne = 'TestOne';
+	const contentTwo = 'TestTwo';
+
+	beforeAll(async () => {
+		mongoServer = await MongoMemoryServer.create();
+		mongodbPersistence = new MongodbPersistence(mongoServer.getUri(), {
+			multipleCollections: true,
+		});
+		mongoConnection = await MongoClient.connect(mongoServer.getUri(), {});
+	});
+
+	afterAll(async () => {
+		if (mongodbPersistence) {
+			await mongodbPersistence.destroy();
+		}
+		if (mongoConnection) {
+			await mongoConnection.close();
+		}
+		if (mongoServer) {
+			await mongoServer.stop();
+		}
+	});
+
+	it('should store docs in separate collections', async () => {
+		const db = mongoConnection.db(mongoServer.instanceInfo.dbName);
+		const collectionOne = db.collection(docNameOne);
+		const collectionTwo = db.collection(docNameTwo);
+
+		/* Store first doc */
+		await storeDocWithText(mongodbPersistence, docNameOne, contentOne);
+		await storeDocWithText(mongodbPersistence, docNameTwo, contentTwo);
+
+		const countOne = await collectionOne.countDocuments();
+		expect(countOne).toEqual(2);
+
+		const countTwo = await collectionTwo.countDocuments();
+		expect(countTwo).toEqual(2);
+
+		await storeDocWithText(mongodbPersistence, docNameTwo, contentTwo);
+		const countTwoAfter = await collectionTwo.countDocuments();
+		expect(countTwoAfter).toEqual(3);
+	});
+
+	it('getAllDocNames should return all doc names', async () => {
+		const docNames = await mongodbPersistence.getAllDocNames();
+		expect(docNames).toContain(docNameOne);
+		expect(docNames).toContain(docNameTwo);
+		expect(docNames).toHaveLength(2);
+	});
+
+	it('should clear document one', async () => {
+		await mongodbPersistence.clearDocument(docNameOne);
+
+		const db = mongoConnection.db(mongoServer.instanceInfo.dbName);
+		const collection = db.collection(docNameOne);
+		const count = await collection.countDocuments();
+		expect(count).toEqual(0);
+	});
+
+	it('should clear document two', async () => {
+		await mongodbPersistence.clearDocument(docNameTwo);
+
+		const db = mongoConnection.db(mongoServer.instanceInfo.dbName);
+		const collection = db.collection(docNameTwo);
+		const count = await collection.countDocuments();
+		expect(count).toEqual(0);
+	});
+});
