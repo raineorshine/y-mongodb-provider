@@ -75,7 +75,10 @@ export const createDocumentMetaKey = (docName, metaKey) => ({
  * @param {object} opts
  * @return {Promise<any[]>}
  */
-export const _getMongoBulkData = (db, query, opts) => db.readAsCursor(query, opts);
+const _getMongoBulkData = (db, query, opts) =>
+	(opts && Object.keys(opts).length > 0) || db.multipleCollections
+		? db.readAsCursor(query, opts)
+		: db.readBatched(query);
 
 /**
  * @param {any} db
