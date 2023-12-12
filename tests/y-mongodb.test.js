@@ -234,16 +234,28 @@ describe('store multiple documents in single collection', () => {
 
 		/* Store first doc */
 		await storeDocWithText(mongodbPersistence, docNameOne, contentOne);
-
-		// Check data is stored in the database via the native mongo client
-		const count = await collection.countDocuments();
-		// it will be two because one is the stateVector and the other is the update
-		expect(count).toEqual(2);
+		const countOne = await collection.countDocuments();
+		expect(countOne).toEqual(2);
 
 		/* Store second doc */
 		await storeDocWithText(mongodbPersistence, docNameTwo, contentTwo);
 		const countTwo = await collection.countDocuments();
 		expect(countTwo).toEqual(4);
+	});
+
+	it('should concurrently retrieve stored docs', async () => {
+		const [docOne, docTwo] = await Promise.all([
+			mongodbPersistence.getYDoc(docNameOne),
+			mongodbPersistence.getYDoc(docNameTwo),
+		]);
+
+		const yTextOne = docOne.getText('name');
+		const yTextContentOne = yTextOne.toString();
+		expect(yTextContentOne).toEqual(contentOne);
+
+		const yTextTwo = docTwo.getText('name');
+		const yTextContentTwo = yTextTwo.toString();
+		expect(yTextContentTwo).toEqual(contentTwo);
 	});
 
 	it('getAllDocNames should return all doc names', async () => {
