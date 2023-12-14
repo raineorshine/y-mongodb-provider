@@ -70,6 +70,14 @@ class MongoAdapter {
 			I will not use it for now, but may change that in the future.
 		*/
 		this.db = this.client.db(this.databaseName);
+
+		/** List of queued document queries when running in batched mode. */
+		/** @type object[] */
+		this.queries = [];
+
+		/** Resolves after the batched query debounce period ends. If null, there is no active batched query. */
+		/** @type Promise<Map<string, object>> | null */
+		this.queryPromise = null;
 	}
 
 	/**
@@ -153,6 +161,74 @@ class MongoAdapter {
 		const curs = collection.find(query).sort(sortQuery).limit(limit);
 
 		return curs.toArray();
+	}
+
+	/** Merge and execute all queued document queries (this.queries) as a single query with { documentName: { $in: [...] } }. Resets this.queries synchronously. */
+	async flushQueries() {
+		const collection = this.db.collection(this.collection);
+
+		// create a query that finds all documents that match any of the queries
+		const mergedQuery = this.queries.reduce(
+			(acc, q) => ({
+				...acc,
+				...q,
+				docName: {
+					$in: [...acc.docName.$in, q.docName],
+				},
+			}),
+			{
+				action: this.queries[0].action,
+				version: this.queries[0].version,
+				docName: { $in: [] },
+			},
+		);
+
+		// reset the queue synchronously
+		this.queries = [];
+		this.queryPromise = null;
+
+		const results = await collection.find(mergedQuery).sort({ clock: 1, part: 1 }).toArray();
+
+		// create a Map of results so each query can select its result in O(1)
+		/** @type Map<string, object> */
+		const resultMap = new Map();
+		results.forEach((result) => {
+			if (!resultMap.has(result.docName)) {
+				resultMap.set(result.docName, []);
+			}
+			resultMap.get(result.docName).push(result);
+		});
+
+		return resultMap;
+	}
+
+	/**
+	 * Get all document updates with a given docName. Batches multiple calls made in the same frame into a single db request.
+	 * @param {{ action: string, docName: string, version: string }} query
+	 * @param {object?} [opts]
+	 * @returns {Promise<Array<object>>}
+	 */
+	async readBatched(query, opts) {
+		if (this.multipleCollections) {
+			throw new Error('Batched queries are not supported when using multiple collections');
+		} else if (Object.keys(opts || {}).length > 0) {
+			throw new Error('Batched queries do not support options');
+		} else if (query.action !== 'update') {
+			throw new Error('Batched queries are only supported for update actions');
+		}
+
+		this.queries.push(query);
+
+		// if there is no active query, start a new one
+		if (!this.queryPromise) {
+			this.queryPromise = new Promise((resolve) => {
+				// wait a tick, then flush all queries that have accumulated during that time
+				setTimeout(() => this.flushQueries().then(resolve), 0);
+			});
+		}
+
+		const resultMap = await this.queryPromise;
+		return resultMap.get(query.docName) || [];
 	}
 
 	/**
@@ -259,7 +335,10 @@ const createDocumentMetaKey = (docName, metaKey) => ({
  * @param {object} opts
  * @return {Promise<any[]>}
  */
-const _getMongoBulkData = (db, query, opts) => db.readAsCursor(query, opts);
+const _getMongoBulkData = (db, query, opts) =>
+	(opts && Object.keys(opts).length > 0) || db.multipleCollections
+		? db.readAsCursor(query, opts)
+		: db.readBatched(query);
 
 /**
  * @param {any} db

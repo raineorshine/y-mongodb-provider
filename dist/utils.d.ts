@@ -3,7 +3,6 @@ export function clearUpdatesRange(db: any, docName: string, from: number, to: nu
 export function createDocumentUpdateKey(docName: string, clock?: number | undefined): any;
 export function createDocumentStateVectorKey(docName: string): any;
 export function createDocumentMetaKey(docName: string, metaKey: string): any;
-export function _getMongoBulkData(db: any, query: object, opts: object): Promise<any[]>;
 export function flushDB(db: any): Promise<any>;
 export function getMongoUpdates(db: any, docName: string, opts?: any): Promise<any[]>;
 export function getCurrentUpdateClock(db: any, docName: string): Promise<number>;

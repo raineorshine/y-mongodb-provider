@@ -18,6 +18,12 @@ export class MongoAdapter {
     databaseName: string;
     client: MongoClient;
     db: import("mongodb").Db;
+    /** List of queued document queries when running in batched mode. */
+    /** @type object[] */
+    queries: object[];
+    /** Resolves after the batched query debounce period ends. If null, there is no active batched query. */
+    /** @type Promise<Map<string, object>> | null */
+    queryPromise: Promise<Map<string, object>> | null;
     /**
      * Get the MongoDB collection name for any docName
      * @param {object} opts
@@ -58,6 +64,19 @@ export class MongoAdapter {
         limit?: number | undefined;
         reverse?: boolean | undefined;
     } | undefined): Promise<Array<object>>;
+    /** Merge and execute all queued document queries (this.queries) as a single query with { documentName: { $in: [...] } }. Resets this.queries synchronously. */
+    flushQueries(): Promise<Map<string, any>>;
+    /**
+     * Get all document updates with a given docName. Batches multiple calls made in the same frame into a single db request.
+     * @param {{ action: string, docName: string, version: string }} query
+     * @param {object?} [opts]
+     * @returns {Promise<Array<object>>}
+     */
+    readBatched(query: {
+        action: string;
+        docName: string;
+        version: string;
+    }, opts?: object | null): Promise<Array<object>>;
     /**
      * Close connection to MongoDB instance.
      */
